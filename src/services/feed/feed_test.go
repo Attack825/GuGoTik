@@ -9,10 +9,11 @@ import (
 	"GuGoTik/src/rpc/user"
 	"GuGoTik/src/storage/file"
 	"GuGoTik/src/utils/logging"
-	"GuGoTik/test/mock"
 	"context"
+	"database/sql"
 	"github.com/DATA-DOG/go-sqlmock"
 	"google.golang.org/grpc"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"io"
 	"os"
@@ -29,10 +30,25 @@ var (
 	testVideos = make([]*models.Video, mockVideoCount)
 	respVideos = make([]*feed.Video, mockVideoCount)
 )
+var DBMock sqlmock.Sqlmock
+var Conn *sql.DB
 
 func TestMain(m *testing.M) {
-	file.Client = MockStorageProvider{}
 
+	logger := logging.LogService("MockDB")
+	var err error
+	Conn, DBMock, err = sqlmock.New()
+	_, err = gorm.Open(postgres.New(postgres.Config{
+		DSN:                  "sqlmock_db_0",
+		DriverName:           "postgres",
+		Conn:                 Conn,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
+	if err != nil {
+		logger.Error("an error '%s' was not expected when opening a stub database connection", err)
+	}
+
+	file.Client = MockStorageProvider{}
 	now := time.Now().UnixMilli()
 	for i := 0; i < mockVideoCount; i++ {
 		test := &models.Video{
@@ -74,10 +90,9 @@ func TestListVideos(t *testing.T) {
 
 	expectedNextTime := uint32(testVideos[strings.VideoCount-1].CreatedAt.Add(time.Duration(-1)).UnixMilli())
 
-	serviceOK := strings.ServiceOK
 	var successResp = &feed.ListFeedResponse{
 		StatusCode: strings.ServiceOKCode,
-		StatusMsg:  &serviceOK,
+		StatusMsg:  strings.ServiceOK,
 		NextTime:   &expectedNextTime,
 		VideoList:  respVideos[:strings.VideoCount],
 	}
@@ -85,19 +100,17 @@ func TestListVideos(t *testing.T) {
 	UserClient = MockUserClient{}
 	CommentClient = MockCommentClient{}
 	FavoriteClient = MockFavoriteClient{}
-
-	rows := sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "user_id", "title", "file_name", "cover_name"})
-	if rows == nil {
-		logger.Error("rows in trouble.")
-	}
+	mockVideos := make([]*models.Video, strings.VideoCount)
 	for _, v := range testVideos[:strings.VideoCount] {
-		rows.AddRow(v.ID, v.CreatedAt, nil, nil, v.UserId, v.Title, v.FileName, v.CoverName)
+		mockVideo := models.Video{
+			Model:     gorm.Model{ID: v.ID, CreatedAt: v.CreatedAt},
+			UserId:    v.UserId,
+			Title:     v.Title,
+			FileName:  v.FileName,
+			CoverName: v.CoverName,
+		}
+		mockVideos = append(mockVideos, &mockVideo)
 	}
-
-	mock.DBMock.
-		ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "videos" WHERE "videos"."created_at" <= $1 AND "videos"."deleted_at" IS NULL ORDER BY "videos"."created_at" DESC LIMIT ` + strconv.Itoa(strings.VideoCount))).
-		WillReturnRows(rows)
-
 	//实际参数
 	type args struct {
 		ctx context.Context
@@ -111,6 +124,15 @@ func TestListVideos(t *testing.T) {
 	}{
 		{name: "Feed Video", args: successArg, wantResp: successResp},
 	}
+	rows := sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "user_id", "title", "file_name", "cover_name"})
+	for _, v := range testVideos[:strings.VideoCount] {
+		rows.AddRow(v.ID, v.CreatedAt, nil, nil, v.UserId, v.Title, v.FileName, v.CoverName)
+	}
+
+	DBMock.
+		ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "videos" WHERE "videos"."created_at" <= $1 AND "videos"."deleted_at" IS NULL ORDER BY "videos"."created_at" DESC LIMIT ` + strconv.Itoa(strings.VideoCount))).
+		WillReturnRows(rows)
+
 	//遍历测试用例
 	for _, tt := range tests {
 		t.Run(tt.name,
@@ -128,6 +150,8 @@ func TestListVideos(t *testing.T) {
 					t.Errorf("ListVideos() lens got %v, want %v", len(gotResp.VideoList), strings.VideoCount)
 				}
 				if !reflect.DeepEqual(gotResp, tt.wantResp) {
+					logger.Debug("gotResp: ", gotResp)
+					logger.Debug("wantResp: ", tt.wantResp)
 					t.Errorf("ListVideos() gotResp %v, want %v", gotResp, tt.wantResp)
 				}
 			})
@@ -176,7 +200,7 @@ func (m MockCommentClient) ListComment(ctx context.Context, in *comment.ListComm
 	ctx = mockContext
 	in = nil
 	opts = nil
-	panic("unimplemented")
+	return &comment.ListCommentResponse{StatusCode: strings.ServiceOKCode, StatusMsg: strings.ServiceOK, CommentList: []*comment.Comment{}}, nil
 }
 
 func (m MockCommentClient) CountComment(ctx context.Context, in *comment.CountCommentRequest, opts ...grpc.CallOption) (r *comment.CountCommentResponse, err error) {

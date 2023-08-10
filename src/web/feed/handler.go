@@ -65,11 +65,9 @@ func ListVideosHandle(c *gin.Context) {
 		})
 		return
 	}
-	//打印正确的LatestTimer日志
 	logger.WithFields(logrus.Fields{
 		"LatestTime": latestTime,
 	}).Infof("Feed List videos")
-	//返回成功的res
 	c.JSON(http.StatusOK, res)
 }
 
