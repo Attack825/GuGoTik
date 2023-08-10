@@ -53,19 +53,25 @@ func init() {
 
 // ListVideos 实现方法
 func (s FeedServiceImpl) ListVideos(ctx context.Context, request *feed.ListFeedRequest) (resp *feed.ListFeedResponse, err error) {
-	//ctx, span := tracing.Tracer.Start(ctx, "ListVideosService")
-	//defer span.End()
+	ctx, span := tracing.Tracer.Start(ctx, "ListVideosService")
+	defer span.End()
 	logger := logging.LogService("FeedService.ListVideos").WithContext(ctx)
 
 	ServiceOK := strings.ServiceOK
 	FeedServiceInnerError := strings.FeedServiceInnerError
 	now := uint32(time.Now().UnixMilli())
+	if request.LatestTime == nil {
+		logger.WithFields(logrus.Fields{
+			"LatestTime": *request.LatestTime,
+		}).Warnf("request.LatestTime is nil.")
+		logging.SetSpanError(span, err)
+	}
 	latestTime, err := strconv.ParseInt(*request.LatestTime, 10, 64)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"now": now,
 		}).Warnf("strconv.ParseInt meet trouble.")
-		//logging.SetSpanError(span, err)
+		logging.SetSpanError(span, err)
 		var numError *strconv.NumError
 		if errors.As(err, &numError) {
 			latestTime = int64(now)
@@ -106,7 +112,7 @@ func (s FeedServiceImpl) ListVideos(ctx context.Context, request *feed.ListFeedR
 		logger.WithFields(logrus.Fields{
 			"videos": videos,
 		}).Warnf("func queryDetailed meet trouble.")
-		//logging.SetSpanError(span, err)
+		logging.SetSpanError(span, err)
 		resp = &feed.ListFeedResponse{
 			StatusCode: strings.FeedServiceInnerErrorCode,
 			StatusMsg:  &FeedServiceInnerError,
