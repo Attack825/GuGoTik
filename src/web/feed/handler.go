@@ -36,6 +36,7 @@ func ListVideosHandle(c *gin.Context) {
 			NextTime:   nil,
 			VideoList:  nil,
 		})
+		return
 	}
 
 	res, err := Client.ListVideos(c.Request.Context(), &feed.ListFeedRequest{})
