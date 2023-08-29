@@ -3,7 +3,7 @@ FROM golang:alpine as builder
 WORKDIR /build
 
 ENV CGO_ENABLED 0
-ENV GOPROXY https://goproxy.cn,direct
+ENV GOPROXY https://goproxy.cn/,direct
 
 RUN apk update --no-cache \
     && apk upgrade \
